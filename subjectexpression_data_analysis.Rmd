@@ -1,0 +1,357 @@
+---
+title: "SubjectExpression"
+author: "Zane Price"
+date: "2/15/2022"
+output: html_document
+---
+
+The six most frequent cognition verbs in the data from Travis Torres Cacoullos (2021) were selected for analysis. 
+
+Overall rate of expression of 41% across 1sg and 3g subjects.
+
+Found nearly 59% subject expression rate for 'creo.'
+
+
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(gmodels)
+library(vtree)
+library(lme4)
+library(sjPlot)
+library(cowplot) #for manuscript ready figures
+library(effects)
+
+```
+
+
+
+
+
+```{r}
+#import dataframe
+se <- read.csv("/Users/zane/Socio_Subj_Expres/central_america/df_copy.csv", header = TRUE)
+View(se)
+
+se <- se %>% dplyr::select(1:7)
+
+```
+
+
+```{r}
+#Explore the data
+
+se %>%
+  count(verb_of_int)
+
+se %>%
+  count(verb_of_int)
+
+se %>%
+  count(verb_of_int_person)
+
+#produce crosstab 
+se %>%
+  group_by(verb_of_int_person, subject_expression) %>%
+  tally() %>%
+  spread(verb_of_int_person, n)
+
+
+se %>%
+  group_by(referential, subject_expression) %>%
+  tally() %>%
+  spread(subject_expression, n)
+
+se %>%
+  group_by(prev_express, subject_expression) %>%
+  tally() %>%
+  spread(subject_expression, n)
+
+se %>%
+  group_by(no_previous, subject_expression) %>%
+  tally() %>%
+  spread(subject_expression, n)
+
+```
+
+
+
+```{r}
+prop <- se%>%
+  group_by(verb_of_int)%>%
+  summarize(n=n())%>%
+  mutate(prop=n/sum(n))   # our new proportion variable
+prop
+
+
+# basic histogram of counts for verbs
+verb_frequencies <- ggplot(se, aes(x=verb_of_int, fill = verb_of_int)) + 
+  geom_histogram( stat = "count") + labs(y = "Verb Count", x = "Verb of Interest") + ggtitle("Verb Counts") + scale_fill_discrete(name="Verbs of Interest",
+                         breaks=c("a", "c", "d", "e", "i","p","s"),
+                         labels=c("acordarse", "creer", "darse cuenta", "entender", "imaginarse", "pensar", "saber"))
+verbs
+
+#histogram by verbs in 1sg and 3sg 
+
+verbs_by_person <- ggplot(se, aes(x = verb_of_int_person, fill = verb_of_int)) + 
+  geom_histogram( stat = "count") + labs(y = "Verb Count", x = "Verb of Interest Person") + ggtitle("Verb Counts by Person") + scale_fill_discrete(name="Verbs of Interest",
+                         breaks=c("a", "c", "d", "e", "i","p","s"),
+                         labels=c("acordarse", "creer", "darse cuenta", "entender", "imaginarse", "pensar", "saber"))
+verbs_by_person
+
+```
+
+
+
+```{r}
+
+subject_expression_by_verb<- ggplot(se, aes(x = subject_expression, fill = verb_of_int)) + 
+  geom_histogram( stat = "count") + labs(y = "Verb Count", x = "Subject Expression") + ggtitle("Verb Count by Subject Expression") + scale_fill_discrete(name="Verbs of Interest",
+                         breaks=c("a", "c", "d", "e", "i","p","s"),
+                         labels=c("acordarse", "creer", "darse cuenta", "entender", "imaginarse", "pensar", "saber"))
+
+subject_expression_by_verb
+
+subject_expression_by_person<- ggplot(se, aes(x = subject_expression, fill = verb_of_int_person)) + 
+  geom_histogram( stat = "count") + labs(y = "Verb Count", x = "Subject Expression") + ggtitle("Verb Count by Subject Expression") + scale_fill_discrete(name="Verbs of Interest",
+                         breaks=c("1", "3"),
+                         labels=c("First", "Third"))
+
+subject_expression_by_person
+```
+
+
+```{r}
+subject_expression_tree <- vtree(se, c("subject_expression", "verb_of_int", "verb_of_int_person"), 
+   fillcolor = c( subject_expression = "#e7d4e8", verb_of_int = "#99d8c9"), title = "Percent Expressed and Non-expressed Subject Pronouns by Verb",
+   horiz = FALSE)
+vtree
+subject_expression_tree
+```
+
+
+
+
+```{r}
+#Split up referential and previous expression, add them as columns to dataframe
+se<- se%>%
+  mutate(referential= case_when (coref_prev_express == "Y" ~ "R",
+                         coref_prev_express == "E" ~ "NR",
+                         coref_prev_express == "N" ~ "NR",
+                         coref_prev_express == "C" ~ "R",
+                         
+                                 TRUE ~ NA_character_)
+  
+)
+se<- se%>%
+  mutate(prev_express= case_when (coref_prev_express == "Y" ~ "1",
+                         coref_prev_express == "E" ~ "1",
+                         coref_prev_express == "N" ~ "0",
+                         coref_prev_express == "C" ~ "0",
+                                 TRUE ~ NA_character_)
+  )
+
+#Create the constraint that no priming or coreferentiality was possible       
+
+se<- se%>%
+  mutate(no_previous= case_when (coref_prev_express == "X" ~ "0",
+                         coref_prev_express == "E" ~ "1",
+                         coref_prev_express == "N" ~ "1",
+                         coref_prev_express == "C" ~ "1",
+                         coref_prev_express == "Y" ~ "1",
+                                 TRUE ~ NA_character_)
+  )
+
+#make subject expression 0 and 1 so results are more intuitive. 
+se<- se%>%
+  mutate(sub_exp= case_when (subject_expression == "N" ~ "0",
+                         subject_expression == "E" ~ "1",
+                              TRUE ~ NA_character_  )
+        
+  )
+#create fixed effect of 'creer' vs. not creer. 
+
+se<- se%>%
+  mutate(creer_notcreer= case_when (verb_of_int == "c" & gramm_person == "1" ~ "1",
+                                    verb_of_int == "c" & gramm_person == "3" ~ "0",
+                         verb_of_int == "a" ~ "0",
+                         verb_of_int == "i" ~ "0",
+                         verb_of_int == "d" ~ "0",
+                         verb_of_int == "e" ~ "0",
+                         verb_of_int == "p" ~ "0",
+                         verb_of_int == "s" ~ "0",
+                              TRUE ~ NA_character_  )
+  )
+```
+
+
+
+
+```{r}
+
+#se %>% drop_na()
+
+#tells r that this is a factor
+# recode for person, referentiality, previous expression
+
+#subject expression as factor
+
+se$sub_exp <- as.factor(se$sub_exp)
+
+#contrasts(se$subject_expression)<- cbind(subject_expression=c(.5, -.5))
+
+contrasts(se$sub_exp)
+
+#person
+# 1 positive 3 negative
+gramm_person <- as.factor(se$verb_of_int_person)
+
+#contrasts(gramm_person) <- cbind(c(-.5, .5)) 
+
+contrasts(gramm_person)
+
+#referentiality
+#referential positive non-referential negative
+
+correferentiality <- as.factor(se$referential)
+
+#contrasts(correferentiality) <- cbind(c(-.5, .5))
+
+contrasts(correferentiality)
+
+#previous expression
+#expressed positive not-expressed negative
+
+priming <- as.factor(se$prev_express)
+
+#contrasts(priming) <- cbind(c(.5, -.5))
+
+contrasts(priming)
+
+
+verb <- as.factor(se$verb_of_int)
+
+#no possibility for priming or correferentiality
+#no possibility negative possibility positive
+
+first_mention <- as.factor(se$no_previous)
+
+#contrasts(prime_ref_possibility) <- cbind(c(-.5, .5))
+
+contrasts(first_mention)
+
+#lexical creer versus not
+
+lexical_creer <- as.factor(se$creer_notcreer)
+
+contrasts(lexical_creer)
+
+
+#model with referential and prev_express
+contrasts(se$sub_exp)
+contrasts(gramm_person)
+contrasts(correferentiality)
+contrasts(priming)
+contrasts(first_mention)
+
+
+#glm model
+
+model_no_random <- glm(sub_exp ~ verb+correferentiality*priming*gramm_person, data = se, family = binomial)
+summary(model_no_random)
+
+#model with opportunity for prev_express and verb of int person interaction 
+model_1 <- glmer(sub_exp ~ first_mention + gramm_person + (1|verb), data = se, family = binomial)
+
+summary(model_1)
+
+#model with correferentiality and priming and gramm person. verb as random effect
+
+model_2 <- glmer(sub_exp ~ correferentiality*priming + gramm_person + (1|verb), data=se, family=binomial)
+
+summary(model_2)
+
+#model with creer as a fixed effect. 
+
+
+model_creer <- glm(sub_exp ~ creer_notcreer * gramm_person, data = se, family = binomial)
+summary(model_creer)
+
+creo_model <- glmer(sub_exp ~ gramm_person * (1|creer_notcreer), data=se, family=binomial)
+                    
+summary(creo_model)
+
+
+
+
+
+```
+
+
+```{r}
+sjPlot::plot_model(model_1)
+
+sjPlot::plot_model(model_2)
+
+sjPlot:: tab_model(model_1)
+
+sjPlot::tab_model(model_2)
+
+
+sjPlot::tab_model(model_1, 
+                  show.re.var= TRUE, 
+                  pred.labels =c("(Intercept)", "referential", "prev_express", "verb_of_int_person"),
+                  dv.labels= "Effect of Referentiality, Priming, and Grammatical Person on Subject Expression")
+
+sjPlot::tab_model(model_2, 
+                  show.re.var= TRUE, 
+                  pred.labels =c("(Intercept)", "referential", "prev_express", "verb_of_int_person"),
+                  dv.labels= "Effect of Referentiality, Priming, and Grammatical Person on Subject Expression")
+
+sjPlot::tab_model(model_3, 
+                  show.re.var= TRUE, 
+                  pred.labels =c("(Intercept)", "referential", "prev_express", "verb_of_int_person"),
+                  dv.labels= "Effect of Referentiality, Priming, and Grammatical Person on Subject Expression")
+```
+
+
+```{r}
+#create a table of effects by variable
+effects_gramm_person <- effects::effect(term= "verb_of_int_person", mod= model_1)
+summary(effects_gramm_person) #output of what the values are
+
+#create df
+
+gramm_person <- as.data.frame(effects_gramm_person)
+
+#Prev_express
+effects_prev_express <- effects::effect(term= "prev_express", mod= model_1)
+summary(effects_prev_express) #output of what the values are
+
+#create df
+
+effects_prev_express <- as.data.frame(effects_prev_express)
+
+#1
+gramm_person_plot <- ggplot() + 
+  #2
+geom_point(data = se, aes(prev_express, subject_expression)) + 
+  #3
+  geom_point(data=effects_prev_express, aes(x=prev_express, y=fit), color="blue") +
+  #4
+  geom_line(data=effects_prev_express, aes(x=prev_express, y=fit), color="blue") +
+  #5
+  geom_ribbon(data= effects_prev_express, aes(x=prev_express, ymin=lower, ymax=upper), alpha= 0.3, fill="blue") +
+  #6
+  labs(x="previous_expression", y="Subject Expression")
+
+gramm_person_plot
+
+citation("lme4")
+
+```
+
